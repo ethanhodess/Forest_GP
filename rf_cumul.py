@@ -68,7 +68,8 @@ class GeneticProgrammingSystem:
             ind.fit(X, y, use_indices=None)
             self.population.append(ind)
 
-    def _tournament_pick_index(self, fitnesses, k=2):
+    def _tournament_pick_index(self, fitnesses):
+        k = self.tournament_k
         competitors = random.sample(range(self.pop_size), k)
         best = max(competitors, key=lambda idx: fitnesses[idx][0])
         return best
@@ -115,7 +116,7 @@ class GeneticProgrammingSystem:
 
         new_population = []
         while len(new_population) < self.pop_size:
-            parent_idx = self._tournament_pick_index(fitnesses, k=2)
+            parent_idx = self._tournament_pick_index(fitnesses)
             parent = self.population[parent_idx]
             child, bootstrap_changed = self._mutate_from_parent(parent)
 
@@ -246,7 +247,7 @@ def main():
 
         csv_path = os.path.join(
             base_save_folder,
-            f"gp100_forest_results_task{task_id}.csv"
+            f"100gp_forest_results_task{task_id}.csv"
         )
 
         df.to_csv(csv_path, index=False)
