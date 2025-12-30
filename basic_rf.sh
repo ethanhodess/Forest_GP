@@ -1,14 +1,14 @@
 #!/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=12
 #SBATCH -t 110:00:00
 #SBATCH --mem=64G
 #SBATCH --job-name=rf-gp
 #SBATCH -p defq
 #SBATCH --exclude=esplhpc-cp040
 #SBATCH -o ./logs/outputs/output.%j_%a.out # STDOUT
-#SBATCH --array=0
+#SBATCH --array=0-99
 
 
 RUN=${SLURM_ARRAY_TASK_ID:-1}
@@ -22,6 +22,6 @@ conda activate tpot2env
 
 echo RunStart
 srun -u /home/hodesse/miniconda3/envs/tpot2env/bin/python rf_cumul.py \
---n_jobs 24 \
+--n_jobs 12 \
 --savepath logs \
 --num_runs ${RUN} \

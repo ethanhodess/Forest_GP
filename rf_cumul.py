@@ -16,8 +16,7 @@ from sklearn.metrics import accuracy_score
 from DecisionTree import DecisionTree
 
 warnings.filterwarnings("ignore")
-random.seed(0)
-np.random.seed(0)
+
 
 
 
@@ -156,7 +155,6 @@ def main():
     base_save_folder = args.savepath
     num_runs = int(args.num_runs)
 
-    task_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
 
     try:
         ray.init(
@@ -167,7 +165,19 @@ def main():
             _system_config={"metrics_report_interval_ms": 0}
         )
 
-        file_path = '/common/hodesse/hpc_test/TPOT2_ensemble/data/2073_True.pkl'
+        task_ids = [359954, 2073, 190146, 168784, 359959]
+        num_runs = 20
+
+        jobs = [(tid, run) for tid in task_ids for run in range(num_runs)]
+
+        array_id = int(os.environ["SLURM_ARRAY_TASK_ID"])
+        task_id, run_num = jobs[array_id]
+
+        random.seed(run_num)
+        np.random.seed(run_num)
+
+
+        file_path = f'/common/hodesse/hpc_test/TPOT2_ensemble/data/{task_id}_True.pkl'
         d = pickle.load(open(file_path, "rb"))
         X_train, y_train, X_test, y_test = d['X_train'], d['y_train'], d['X_test'], d['y_test']
 
@@ -176,11 +186,11 @@ def main():
         print("\n=== Baseline: sklearn RandomForestClassifier ===")
 
         rf = RandomForestClassifier(
-            n_estimators=10000,
+            n_estimators=5000,
             max_depth=None,
             n_jobs=n_jobs,
             bootstrap=True,
-            random_state=task_id
+            random_state=task_id + run_num
         )
         rf.fit(X_train, y_train)
         rf_test_acc = accuracy_score(y_test, rf.predict(X_test))
@@ -191,7 +201,7 @@ def main():
             pop_size=100,
             n_features=X_train.shape[1],
             mutation_rate=0.5,
-            tournament_k=100,
+            tournament_k=10,
             n_classes=n_classes
         )
         gp.initialize_population(X_train, y_train)
@@ -199,7 +209,7 @@ def main():
         cumulative_trees = []
         full_results = []
 
-        n_gen = 100
+        n_gen = 50
         for gen in range(n_gen):
             gen0_flag = (gen == 0)
             fitnesses, evaluated_population = gp.evolve(X_train, y_train, gen_0=gen0_flag)
@@ -232,6 +242,7 @@ def main():
                 "ensemble_test_acc": ensemble_test_acc,
                 "height_var": np.var(heights),
                 "leaves_var": np.var(leaves),
+                "RF_baseline": rf_test_acc
             })
 
         df = pd.DataFrame(full_results)
@@ -247,7 +258,7 @@ def main():
 
         csv_path = os.path.join(
             base_save_folder,
-            f"100gp_forest_results_task{task_id}.csv"
+            f"gp_forest_{task_id}_{run_num}.csv"
         )
 
         df.to_csv(csv_path, index=False)
