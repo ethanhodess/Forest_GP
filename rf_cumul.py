@@ -201,7 +201,7 @@ def main():
             pop_size=100,
             n_features=X_train.shape[1],
             mutation_rate=0.5,
-            tournament_k=10,
+            tournament_k=100,
             n_classes=n_classes
         )
         gp.initialize_population(X_train, y_train)
@@ -258,7 +258,7 @@ def main():
 
         csv_path = os.path.join(
             base_save_folder,
-            f"gp_forest_{task_id}_{run_num}.csv"
+            f"k100_gp_forest_{task_id}_{run_num}.csv"
         )
 
         df.to_csv(csv_path, index=False)
