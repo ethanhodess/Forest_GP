@@ -10,14 +10,13 @@ import copy
 import dill as pickle
 import warnings
 import os
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
 from DecisionTree import DecisionTree
 
 warnings.filterwarnings("ignore")
-
-
 
 
 # ==============  FITNESS EVALUATION  ==============
@@ -43,10 +42,10 @@ class GeneticProgrammingSystem:
         self.population: list[DecisionTree] = []
 
         self.init_ranges = {
-            "max_depth_pct": (0.01, 0.05),
-            "min_samples_split_pct": (0.01, 0.1),
-            "min_samples_leaf_pct": (0.001, 0.05),
-            "min_impurity_decrease": (0.0, 0.02),
+            "max_depth_gene": (0, 1),
+            "min_samples_split_gene": (0, 1),
+            "min_samples_leaf_gene": (0, 1),
+            "min_impurity_gene": (0, 1),
         }
 
     def _random_hyperparams(self):
@@ -57,10 +56,10 @@ class GeneticProgrammingSystem:
         for _ in range(self.pop_size):
             p = self._random_hyperparams()
             ind = DecisionTree(
-                max_depth_pct=p["max_depth_pct"],
-                min_samples_split_pct=p["min_samples_split_pct"],
-                min_samples_leaf_pct=p["min_samples_leaf_pct"],
-                min_impurity_decrease=p["min_impurity_decrease"],
+                max_depth_gene=p["max_depth_gene"],
+                min_samples_split_gene=p["min_samples_split_gene"],
+                min_samples_leaf_gene=p["min_samples_leaf_gene"],
+                min_impurity_gene=p["min_impurity_gene"],
                 n_features=self.n_features,
                 n_classes=self.n_classes
             )
@@ -77,36 +76,33 @@ class GeneticProgrammingSystem:
         child = copy.deepcopy(parent)
         bootstrap_mutate = (random.random() < self.mutation_rate)
 
-        def maybe_mutate_attr(attr_name, lower=None, upper=None, ensure_nonneg=True):
+        def maybe_mutate_attr(attr_name):
             if random.random() < self.mutation_rate:
-                factor = np.random.normal(1.0, 0.1)
                 old = getattr(child, attr_name)
-                new = old * factor
-                if lower is not None:
-                    new = max(lower, new)
-                if upper is not None:
-                    new = min(upper, new)
-                if ensure_nonneg:
-                    new = max(0.0, new)
+                new = np.clip(old + np.random.normal(0.0, 0.05), 0.0, 1.0)  # +/- 0.05, within [0, 1]
                 setattr(child, attr_name, float(new))
 
-        for attr in ["max_depth_pct", "min_samples_split_pct", "min_samples_leaf_pct", "min_impurity_decrease"]:
+        for attr in [
+            "max_depth_gene",
+            "min_samples_split_gene",
+            "min_samples_leaf_gene",
+            "min_impurity_gene",
+        ]:
             maybe_mutate_attr(attr)
 
         return child, bootstrap_mutate
 
-    def evolve(self, X, y, gen_0=True):
-        evaluated_population = []
-
+    def evolve(self, X_train, y_train, X_val, y_val, gen_0=True):
         if gen_0:
             for ind in self.population:
-                ind.fit(X, y, use_indices=None)
+                ind.fit(X_train, y_train, use_indices=None)
         else:
             for ind in self.population:
                 if ind.root is None:
-                    ind.fit(X, y, use_indices=None)
+                    ind.fit(X_train, y_train, use_indices=None)
 
-        futures = [evaluate_individual.remote(ind, X, y) for ind in self.population]
+
+        futures = [evaluate_individual.remote(ind, X_val, y_val) for ind in self.population]
         fitnesses = ray.get(futures)
         evaluated_population = [copy.deepcopy(ind) for ind in self.population]
 
@@ -119,14 +115,13 @@ class GeneticProgrammingSystem:
             parent = self.population[parent_idx]
             child, bootstrap_changed = self._mutate_from_parent(parent)
 
-            # Full new sample when mutating data
             if bootstrap_changed:
-                child.fit(X, y, use_indices=None)
+                child.fit(X_train, y_train, use_indices=None)
             else:
                 if parent.sample_indices is not None:
-                    child.fit(X, y, use_indices=parent.sample_indices)
+                    child.fit(X_train, y_train, use_indices=parent.sample_indices)
                 else:
-                    child.fit(X, y, use_indices=None)
+                    child.fit(X_train, y_train, use_indices=None)
 
             new_population.append(child)
 
@@ -151,10 +146,12 @@ def main():
     parser.add_argument("-s", "--savepath", default="results_tables", nargs='?')
     parser.add_argument("-r", "--num_runs", default=1, nargs='?')
     args = parser.parse_args()
+
     n_jobs = int(args.n_jobs)
     base_save_folder = args.savepath
     num_runs = int(args.num_runs)
 
+    TOURNAMENT_KS = [1, 2, 10, 25, 50, 100]
 
     try:
         ray.init(
@@ -167,7 +164,6 @@ def main():
 
         task_ids = [359954, 2073, 190146, 168784, 359959]
         num_runs = 20
-
         jobs = [(tid, run) for tid in task_ids for run in range(num_runs)]
 
         array_id = int(os.environ["SLURM_ARRAY_TASK_ID"])
@@ -176,11 +172,13 @@ def main():
         random.seed(run_num)
         np.random.seed(run_num)
 
-
         file_path = f'/common/hodesse/hpc_test/TPOT2_ensemble/data/{task_id}_True.pkl'
         d = pickle.load(open(file_path, "rb"))
-        X_train, y_train, X_test, y_test = d['X_train'], d['y_train'], d['X_test'], d['y_test']
+        X_train, y_train, X_test, y_test = (
+            d['X_train'], d['y_train'], d['X_test'], d['y_test']
+        )
 
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=run_num)
 
 
         print("\n=== Baseline: sklearn RandomForestClassifier ===")
@@ -190,78 +188,106 @@ def main():
             max_depth=None,
             n_jobs=n_jobs,
             bootstrap=True,
-            random_state=task_id + run_num
+            random_state=run_num
         )
         rf.fit(X_train, y_train)
         rf_test_acc = accuracy_score(y_test, rf.predict(X_test))
-        print(f"RF test accuracy  = {rf_test_acc:.4f}\n")
+        print(f"RF test accuracy = {rf_test_acc:.4f}\n")
 
         n_classes = len(np.unique(y_train))
-        gp = GeneticProgrammingSystem(
-            pop_size=100,
-            n_features=X_train.shape[1],
-            mutation_rate=0.5,
-            tournament_k=100,
-            n_classes=n_classes
-        )
-        gp.initialize_population(X_train, y_train)
 
-        cumulative_trees = []
-        full_results = []
 
-        n_gen = 50
-        for gen in range(n_gen):
-            gen0_flag = (gen == 0)
-            fitnesses, evaluated_population = gp.evolve(X_train, y_train, gen_0=gen0_flag)
+        for tournament_k in TOURNAMENT_KS:
+            print(f"\n===== TOURNAMENT K = {tournament_k} =====")
 
-            # Add current generation's trees to cumulative set
-            cumulative_trees.extend(copy.deepcopy(evaluated_population))
+            gp = GeneticProgrammingSystem(
+                pop_size=100,
+                n_features=X_train.shape[1],
+                mutation_rate=0.5,
+                tournament_k=tournament_k,
+                n_classes=n_classes
+            )
+            gp.initialize_population(X_train, y_train)
 
-            # Compute ensemble predictions on cumulative trees
-            preds_matrix_train = np.vstack([t.predict(X_train) for t in cumulative_trees])
-            preds_matrix_test = np.vstack([t.predict(X_test) for t in cumulative_trees])
-            ensemble_train_acc = (majority_vote(preds_matrix_train) == y_train).mean()
-            ensemble_test_acc = (majority_vote(preds_matrix_test) == y_test).mean()
+            tree_records = []
+            metrics_records = []
+            tree_id_counter = 0
+            cumulative_trees = []
 
-            # Individual tree metrics
-            tree_test_accs = [(t.predict(X_test) == y_test).mean()for t in cumulative_trees]
+            n_gen = 50
+            for gen in range(n_gen):
+                gen0_flag = (gen == 0)
+                fitnesses, evaluated_population = gp.evolve(
+                    X_train, y_train, X_val, y_val, gen_0=gen0_flag
+                )
 
-            # Compute structural metrics over cumulative trees
-            heights = [t.height() for t in cumulative_trees]
-            leaves = [t.num_leaves() for t in cumulative_trees]
+                cumulative_trees.extend(copy.deepcopy(evaluated_population))
 
-            print(f"Gen {gen}: cumulative_tree_avg={np.mean(tree_test_accs)}, "
-                  f"height_var={np.var(heights):.2f}, leaves_var={np.var(leaves):.2f}, "
-                  f"ensemble_train_acc={ensemble_train_acc:.4f}, ensemble_test_acc={ensemble_test_acc:.4f}")
-            
-            full_results.append({
-                "run_id": task_id,
-                "generation": gen,
-                "avg_tree_test_acc": np.mean(tree_test_accs),
-                "ensemble_train_acc": ensemble_train_acc,
-                "ensemble_test_acc": ensemble_test_acc,
-                "height_var": np.var(heights),
-                "leaves_var": np.var(leaves),
-                "RF_baseline": rf_test_acc
-            })
+                # ---- log hyperparameters (per tree) ----
+                for t in evaluated_population:
+                    tree_records.append({
+                        "run_id": task_id,
+                        "run_num": run_num,
+                        "tournament_k": tournament_k,
+                        "generation": gen,
+                        "tree_id": round(tree_id_counter, 3),
+                        "max_depth_gene": round(t.max_depth_gene, 3),
+                        "min_samples_split_gene": round(t.min_samples_split_gene, 3),
+                        "min_samples_leaf_gene": round(t.min_samples_leaf_gene, 3),
+                        "min_impurity_gene": round(t.min_impurity_gene, 3),
+                    })
+                    tree_id_counter += 1
 
-        df = pd.DataFrame(full_results)
+                preds_train = np.vstack([t.predict(X_train) for t in cumulative_trees])
+                preds_test = np.vstack([t.predict(X_test) for t in cumulative_trees])
 
-        df = df.round({
-            "avg_tree_train_acc": 4,
-            "avg_tree_test_acc": 4,
-            "ensemble_train_acc": 4,
-            "ensemble_test_acc": 4,
-            "height_var": 2,
-            "leaves_var": 2,
-        })
+                ensemble_train_acc = (majority_vote(preds_train) == y_train).mean()
+                ensemble_test_acc = (majority_vote(preds_test) == y_test).mean()
 
-        csv_path = os.path.join(
-            base_save_folder,
-            f"k100_gp_forest_{task_id}_{run_num}.csv"
-        )
+                tree_test_accs = [
+                    (t.predict(X_test) == y_test).mean()
+                    for t in cumulative_trees
+                ]
 
-        df.to_csv(csv_path, index=False)
+                heights = [t.height() for t in cumulative_trees]
+                leaves = [t.num_leaves() for t in cumulative_trees]
+
+                metrics_records.append({
+                    "run_id": task_id,
+                    "run_num": run_num,
+                    "tournament_k": tournament_k,
+                    "generation": gen,
+                    "avg_tree_test_acc": round(np.mean(tree_test_accs), 3),
+                    "ensemble_train_acc": round(ensemble_train_acc, 3),
+                    "ensemble_test_acc": round(ensemble_test_acc, 3),
+                    "height_var": round(np.var(heights), 3),
+                    "leaves_var": round(np.var(leaves), 3),
+                    "RF_baseline": round(rf_test_acc, 3)
+                })
+
+                print(
+                    f"Gen {gen}: avg_tree={np.mean(tree_test_accs):.4f}, "
+                    f"ens_train={ensemble_train_acc:.4f}, "
+                    f"ens_test={ensemble_test_acc:.4f}"
+                )
+
+            hp_df = pd.DataFrame(tree_records)
+            metrics_df = pd.DataFrame(metrics_records)
+
+            hp_path = os.path.join(
+                base_save_folder,
+                f"hyperparams_k{tournament_k}_{task_id}_{run_num}.csv"
+            )
+            metrics_path = os.path.join(
+                base_save_folder,
+                f"metrics_k{tournament_k}_{task_id}_{run_num}.csv"
+            )
+
+            hp_df.to_csv(hp_path, index=False)
+            metrics_df.to_csv(metrics_path, index=False)
+
+            print(f"Saved hyperparams → {hp_path}")
+            print(f"Saved metrics     → {metrics_path}")
 
     except Exception as e:
         trace = traceback.format_exc()

@@ -6,17 +6,17 @@ import random
 
 class DecisionTree:
     def __init__(self,
-                 max_depth_pct: float,
-                 min_samples_split_pct: float,
-                 min_samples_leaf_pct: float,
-                 min_impurity_decrease: float,
+                 max_depth_gene: float,
+                 min_samples_split_gene: float,
+                 min_samples_leaf_gene: float,
+                 min_impurity_gene: float,
                  n_features: int,
                  n_classes: int):
         # store hyperparams as floats (percent-of-total-samples for integer hyperparams)
-        self.max_depth_pct = float(max_depth_pct)
-        self.min_samples_split_pct = float(min_samples_split_pct)
-        self.min_samples_leaf_pct = float(min_samples_leaf_pct)
-        self.min_impurity_decrease = float(min_impurity_decrease)
+        self.max_depth_gene = float(max_depth_gene)
+        self.min_samples_split_gene = float(min_samples_split_gene)
+        self.min_samples_leaf_gene = float(min_samples_leaf_gene)
+        self.min_impurity_gene = float(min_impurity_gene)
 
         # fitted tree root and the sample indices used for its last fit
         self.root: Optional[TreeNode] = None
@@ -25,12 +25,14 @@ class DecisionTree:
         self.n_features = n_features
         self.n_classes = n_classes
 
-    # convert percent hyperparams to ints using total_samples
-    def _compute_int_hyperparams(self, total_samples: int):
-        max_depth = max(1, int(round(self.max_depth_pct * total_samples)))
-        min_samples_split = max(2, int(round(self.min_samples_split_pct * total_samples)))
-        min_samples_leaf = max(1, int(round(self.min_samples_leaf_pct * total_samples)))
-        return max_depth, min_samples_split, min_samples_leaf
+    def _decode_hyperparams(self, n_samples: int):
+        max_depth = int(2 + self.max_depth_gene * 10)      # [2, 12]
+        min_samples_leaf = int(1 + self.min_samples_leaf_gene * 30)  # [1, 31]
+        min_samples_split = max(2, int(2 * self.min_samples_split_gene * 50))
+        min_impurity_decrease = self.min_impurity_gene * 0.05
+
+        return max_depth, min_samples_split, min_samples_leaf, min_impurity_decrease
+
 
     def fit(self, X: np.ndarray, y: np.ndarray, use_indices: Optional[np.ndarray] = None):
         n_total = X.shape[0]
@@ -47,14 +49,14 @@ class DecisionTree:
         y_sub = y[idxs]
 
         # compute integer hyperparams from percent representations
-        max_depth_int, min_samples_split, min_samples_leaf = self._compute_int_hyperparams(n_total)
+        max_depth, min_samples_split, min_samples_leaf, min_impurity_decrease = self._decode_hyperparams(n_total)
 
         # build tree using stored sample
-        self.root = self._build_tree(X_sub, y_sub, max_depth_int, X.shape[1], self.n_classes,
+        self.root = self._build_tree(X_sub, y_sub, max_depth, X.shape[1], self.n_classes,
                                      depth=0,
                                      min_samples_split=min_samples_split,
                                      min_samples_leaf=min_samples_leaf,
-                                     min_impurity_decrease=self.min_impurity_decrease)
+                                     min_impurity_decrease=min_impurity_decrease)
 
     def predict(self, X):
         if self.root is None:
