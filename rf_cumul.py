@@ -61,7 +61,10 @@ class GeneticProgrammingSystem:
                 min_samples_leaf_gene=p["min_samples_leaf_gene"],
                 min_impurity_gene=p["min_impurity_gene"],
                 n_features=self.n_features,
-                n_classes=self.n_classes
+                n_classes=self.n_classes,
+                max_features=random.choice(DecisionTree._allowed_max_features),
+                class_weight=random.choice(DecisionTree._allowed_class_weights),
+                criterion=random.choice(DecisionTree._allowed_criteria)
             )
             ind.fit(X, y, use_indices=None)
             self.population.append(ind)
@@ -79,7 +82,7 @@ class GeneticProgrammingSystem:
         def maybe_mutate_attr(attr_name):
             if random.random() < self.mutation_rate:
                 old = getattr(child, attr_name)
-                new = np.clip(old + np.random.normal(0.0, 0.05), 0.0, 1.0)  # +/- 0.05, within [0, 1]
+                new = np.clip(old + np.random.normal(0.0, 0.1), 0.0, 1.0)  # +/- 0.1, within [0, 1]
                 setattr(child, attr_name, float(new))
 
         for attr in [
@@ -89,6 +92,15 @@ class GeneticProgrammingSystem:
             "min_impurity_gene",
         ]:
             maybe_mutate_attr(attr)
+
+        if random.random() < self.mutation_rate:
+            child.criterion = random.choice(child._allowed_criteria)
+
+        if random.random() < self.mutation_rate:
+            child.max_features = random.choice(child._allowed_max_features)
+
+        if random.random() < self.mutation_rate:
+            child.class_weight = random.choice(child._allowed_class_weights)
 
         return child, bootstrap_mutate
 
@@ -178,7 +190,7 @@ def main():
             d['X_train'], d['y_train'], d['X_test'], d['y_test']
         )
 
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=run_num)
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=run_num, stratify=y_train)
 
 
         print("\n=== Baseline: sklearn RandomForestClassifier ===")
@@ -194,8 +206,20 @@ def main():
         rf_test_acc = accuracy_score(y_test, rf.predict(X_test))
         print(f"RF test accuracy = {rf_test_acc:.4f}\n")
 
-        n_classes = len(np.unique(y_train))
+        rf_depth = []
+        for tree in rf.estimators_:
+            rf_depth.append(tree.get_depth())
 
+        rf_depth_var = np.var(rf_depth)
+
+        rf_leaves = []
+        for tree in rf.estimators_:
+            rf_leaves.append(tree.get_n_leaves())
+
+        rf_leaves_var = np.var(rf_leaves)
+        
+
+        n_classes = len(np.unique(y_train))
 
         for tournament_k in TOURNAMENT_KS:
             print(f"\n===== TOURNAMENT K = {tournament_k} =====")
@@ -223,20 +247,6 @@ def main():
 
                 cumulative_trees.extend(copy.deepcopy(evaluated_population))
 
-                # ---- log hyperparameters (per tree) ----
-                for t in evaluated_population:
-                    tree_records.append({
-                        "run_id": task_id,
-                        "run_num": run_num,
-                        "tournament_k": tournament_k,
-                        "generation": gen,
-                        "tree_id": round(tree_id_counter, 3),
-                        "max_depth_gene": round(t.max_depth_gene, 3),
-                        "min_samples_split_gene": round(t.min_samples_split_gene, 3),
-                        "min_samples_leaf_gene": round(t.min_samples_leaf_gene, 3),
-                        "min_impurity_gene": round(t.min_impurity_gene, 3),
-                    })
-                    tree_id_counter += 1
 
                 preds_train = np.vstack([t.predict(X_train) for t in cumulative_trees])
                 preds_test = np.vstack([t.predict(X_test) for t in cumulative_trees])
@@ -262,7 +272,9 @@ def main():
                     "ensemble_test_acc": round(ensemble_test_acc, 3),
                     "height_var": round(np.var(heights), 3),
                     "leaves_var": round(np.var(leaves), 3),
-                    "RF_baseline": round(rf_test_acc, 3)
+                    "RF_baseline": round(rf_test_acc, 3),
+                    "RF_height": round(rf_depth_var, 3),
+                    "RF_leaves": round(rf_leaves_var, 3)
                 })
 
                 print(
@@ -271,22 +283,15 @@ def main():
                     f"ens_test={ensemble_test_acc:.4f}"
                 )
 
-            hp_df = pd.DataFrame(tree_records)
             metrics_df = pd.DataFrame(metrics_records)
 
-            hp_path = os.path.join(
-                base_save_folder,
-                f"hyperparams_k{tournament_k}_{task_id}_{run_num}.csv"
-            )
             metrics_path = os.path.join(
                 base_save_folder,
                 f"metrics_k{tournament_k}_{task_id}_{run_num}.csv"
             )
 
-            hp_df.to_csv(hp_path, index=False)
             metrics_df.to_csv(metrics_path, index=False)
 
-            print(f"Saved hyperparams → {hp_path}")
             print(f"Saved metrics     → {metrics_path}")
 
     except Exception as e:
