@@ -217,6 +217,12 @@ def main():
             rf_leaves.append(tree.get_n_leaves())
 
         rf_leaves_var = np.var(rf_leaves)
+
+        ind_tree_scores = []
+        for tree in rf.estimators_:
+            ind_tree_scores.append(tree.score(X_val, y_val))
+
+        rf_avg_score = np.mean(ind_tree_scores)
         
 
         n_classes = len(np.unique(y_train))
@@ -274,7 +280,8 @@ def main():
                     "leaves_var": round(np.var(leaves), 3),
                     "RF_baseline": round(rf_test_acc, 3),
                     "RF_height": round(rf_depth_var, 3),
-                    "RF_leaves": round(rf_leaves_var, 3)
+                    "RF_leaves": round(rf_leaves_var, 3),
+                    "RF_avg": round(rf_avg_score, 3)
                 })
 
                 print(
