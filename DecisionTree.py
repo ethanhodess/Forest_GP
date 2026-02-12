@@ -8,7 +8,7 @@ import copy
 
 class DecisionTree:
 
-    # --- allowed sets for categorical genes ---
+    # allowed sets
     _allowed_max_features: List[Union[str, None]] = ["sqrt", "log2", None]
     _allowed_criteria: List[str] = ["gini", "entropy", "log_loss"]
     _allowed_class_weights: List[Union[str, None]] = [None, "balanced"]
@@ -27,13 +27,13 @@ class DecisionTree:
         criterion: str = "gini",
         mutation_rate: float = 0.1
     ):
-        # --- numeric genes ---
+        # numeric 
         self.max_depth_gene = float(max_depth_gene)
         self.min_samples_split_gene = float(min_samples_split_gene)
         self.min_samples_leaf_gene = float(min_samples_leaf_gene)
         self.min_impurity_gene = float(min_impurity_gene)
 
-        # --- categorical options ---
+        # categorical 
         self.max_features = max_features
         self.max_leaf_nodes = max_leaf_nodes
         self.class_weight = class_weight
@@ -48,7 +48,7 @@ class DecisionTree:
         self._leaf_count = 0
         self.mutation_rate = mutation_rate
 
-    # --- decode numeric genes to usable hyperparams ---
+    # custom decode
     def _decode_hyperparams(self, n_samples: int):
         max_depth = int(2 + self.max_depth_gene * 10)          # [2,12]
         min_samples_leaf = int(1 + self.min_samples_leaf_gene * 30)  # [1,31]
@@ -119,25 +119,30 @@ class DecisionTree:
         class_weight=None,
         criterion="gini"
     ):
+        # compute global weights
+        if class_weight == "balanced":
+            counts = Counter(y)
+            total = len(y)
+            class_weights = {c: total / (len(counts) * cnt) for c, cnt in counts.items()}
+            sample_weight = np.array([class_weights[yi] for yi in y])
+        else:
+            sample_weight = np.ones(len(y))
+
         # terminal conditions
         if len(y) == 0 or len(set(y)) == 1 or depth >= max_depth or len(y) < min_samples_split or (max_leaf_nodes and self._leaf_count >= max_leaf_nodes):
             self._leaf_count += 1
             return TreeNode(value=Counter(y).most_common(1)[0][0] if len(y) else 0)
 
-        # --- impurity helper ---
-        def impurity(y_local):
-            counts = Counter(y_local)
-            total = sum(counts.values())
-            if total == 0:
+        def impurity(y_local, w_local):
+            total_weight = w_local.sum()
+            if total_weight == 0:
                 return 0.0
 
-            if class_weight == "balanced":
-                weights = {c: total / (len(counts) * cnt) for c, cnt in counts.items()}
-                probs = np.array([counts[c] * weights[c] for c in counts])
-            else:
-                probs = np.array(list(counts.values()))
+            counts = {}
+            for yi, wi in zip(y_local, w_local):
+                counts[yi] = counts.get(yi, 0.0) + wi
 
-            probs = probs / probs.sum()
+            probs = np.array(list(counts.values())) / total_weight
 
             if criterion == "gini":
                 return 1.0 - np.sum(probs ** 2)
@@ -148,9 +153,9 @@ class DecisionTree:
             else:
                 raise ValueError(f"Unknown criterion: {criterion}")
 
-        parent_impurity = impurity(y)
+        parent_impurity = impurity(y, sample_weight)
 
-        # --- max_features handling ---
+        # max_features handling
         if max_features is None:
             k = n_features
         elif max_features == "sqrt":
@@ -164,24 +169,32 @@ class DecisionTree:
 
         feature_subset = random.sample(range(n_features), k)
 
-        # --- find best split ---
+        # find best split
         best_feat = best_thresh = None
         best_impurity_after = None
 
         for f in feature_subset:
-            thresh_candidates = np.unique(X[:, f])
-            if len(thresh_candidates) == 0:
+            values = np.unique(X[:, f])
+            if len(values) < 2:
                 continue
-            if len(thresh_candidates) > 20:
-                thresh_candidates = np.random.choice(thresh_candidates, 20, replace=False)
 
-            for t in thresh_candidates:
+            # midpoints
+            thresholds = (values[:-1] + values[1:]) / 2.0
+
+            for t in thresholds:
                 left_mask = X[:, f] <= t
                 right_mask = ~left_mask
                 if left_mask.sum() < min_samples_leaf or right_mask.sum() < min_samples_leaf:
                     continue
 
-                impurity_after = (left_mask.sum()/len(y))*impurity(y[left_mask]) + (right_mask.sum()/len(y))*impurity(y[right_mask])
+                w_left = sample_weight[left_mask]
+                w_right = sample_weight[right_mask]
+
+                impurity_after = (
+                    (w_left.sum() / sample_weight.sum()) * impurity(y[left_mask], w_left)
+                    + (w_right.sum() / sample_weight.sum()) * impurity(y[right_mask], w_right)
+                )
+
                 decrease = parent_impurity - impurity_after
                 if decrease <= min_impurity_decrease:
                     continue
@@ -209,7 +222,7 @@ class DecisionTree:
 
         return TreeNode(best_feat, best_thresh, left_node, right_node)
 
-    # --- mutate from parent (numeric, integer, categorical genes) ---
+
     def _mutate_from_parent(self, parent):
         child = copy.deepcopy(parent)
         bootstrap_mutate = (random.random() < self.mutation_rate)

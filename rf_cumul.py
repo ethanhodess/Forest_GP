@@ -82,7 +82,7 @@ class GeneticProgrammingSystem:
         def maybe_mutate_attr(attr_name):
             if random.random() < self.mutation_rate:
                 old = getattr(child, attr_name)
-                new = np.clip(old + np.random.normal(0.0, 0.1), 0.0, 1.0)  # +/- 0.1, within [0, 1]
+                new = np.clip(old + np.random.normal(0.0, 0.2), 0.0, 1.0)  # +/- 0.1, within [0, 1]
                 setattr(child, attr_name, float(new))
 
         for attr in [
@@ -163,7 +163,7 @@ def main():
     base_save_folder = args.savepath
     num_runs = int(args.num_runs)
 
-    TOURNAMENT_KS = [1, 2, 10, 25, 50, 100]
+    TOURNAMENT_KS = [2, 10, 25, 50]
 
     try:
         ray.init(
@@ -174,7 +174,8 @@ def main():
             _system_config={"metrics_report_interval_ms": 0}
         )
 
-        task_ids = [359954, 2073, 190146, 168784, 359959]
+        #task_ids = [359954, 2073, 190146, 168784, 359959]
+        task_ids = [359959]
         num_runs = 20
         jobs = [(tid, run) for tid in task_ids for run in range(num_runs)]
 
