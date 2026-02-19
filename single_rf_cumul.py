@@ -295,6 +295,7 @@ def main():
                     "run_num": run_num,
                     "tournament_k": tournament_k,
                     "generation": gen,
+                    "avg_tree_test_acc": round(np.mean(tree_test_accs), 3),
                     "ensemble_test_acc": round(ens_test_acc, 3),
                     "height_var": round(np.var(heights), 3),
                     "leaves_var": round(np.var(leaves), 3),
