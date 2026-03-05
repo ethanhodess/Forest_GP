@@ -15,6 +15,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
 
 warnings.filterwarnings("ignore")
 
@@ -75,24 +77,21 @@ class GeneticProgrammingSystem:
             if spec["type"] == "float":
                 g = float(gene)
                 if name == "min_samples_leaf":
-                    # range: [1, 0.05 * n]
                     decoded[name] = max(
                         1,
-                        int(1 + (g ** 2) * 0.05 * n_samples)
+                        int(1 + g * 0.1 * n_samples)
                     )
 
                 elif name == "min_samples_split":
-                    # range: [2, 0.2 * n]
                     decoded[name] = max(
                         2,
-                        int(2 + (g ** 2) * 0.2 * n_samples)
+                        int(2 + g * 0.1 * n_samples)
                     )
 
                 elif name == "max_depth":
-                    # range: [1, 50]
                     decoded[name] = max(
                         1,
-                        int(1 + (g ** 2) * 50)
+                        int(1 + g * 0.1 * n_samples)
                     )
 
                 elif name == "min_impurity_decrease":
@@ -228,23 +227,57 @@ def main():
 
         ray.init(num_cpus=n_jobs, ignore_reinit_error=True, log_to_driver=False)
 
-        task_ids = [359954, 2073, 190146, 168784, 359959]
+        task_ids = [168350, 168757, 168911, 190411, 359955]
         num_runs = 20
         jobs = [(tid, run) for tid in task_ids for run in range(num_runs)]
 
         array_id = int(os.environ["SLURM_ARRAY_TASK_ID"])
         task_id, run_num = jobs[array_id]
 
-        random.seed(run_num)
         np.random.seed(run_num)
 
-        d = pickle.load(open(f'/common/hodesse/hpc_test/TPOT2_ensemble/data/{task_id}_True.pkl', "rb"))
-        X_train, y_train, X_test, y_test = d["X_train"], d["y_train"], d["X_test"], d["y_test"]
+        data = pd.read_csv(f'/common/hodesse/hpc_test/Forest_GP/data/task_{task_id}.csv')
+        with open(f'/common/hodesse/hpc_test/Forest_GP/data/task_{task_id}_categorical_indicator.pkl', "rb") as f:
+            cat_ind = pickle.load(f)
+
+        data.columns = data.columns.str.strip().str.lower()
+
+        y = data["class"]
+        X = data.iloc[:, :-1]   
+
+        if len(cat_ind) == data.shape[1]:
+            cat_ind = cat_ind[:-1]
+
+        assert len(cat_ind) == X.shape[1]
+
+        cat_cols = X.columns[cat_ind]
+        num_cols = X.columns.difference(cat_cols)
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2,
+            random_state=run_num, stratify=y
+        )
 
         X_train, X_val, y_train, y_val = train_test_split(
             X_train, y_train, test_size=0.2,
             random_state=run_num, stratify=y_train
         )
+
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+                ("num", "passthrough", num_cols),
+            ]
+        )
+
+        X_train = preprocessor.fit_transform(X_train)
+        X_test  = preprocessor.transform(X_test)
+        X_val   = preprocessor.transform(X_val)
+
+        y_train = y_train.to_numpy()
+        y_val   = y_val.to_numpy()
+        y_test  = y_test.to_numpy()
+
 
         print("\n=== Baseline: sklearn RandomForestClassifier ===")
         rf = RandomForestClassifier(
@@ -256,8 +289,16 @@ def main():
         rf_test_acc = accuracy_score(y_test, rf.predict(X_test))
         print(f"RF test accuracy = {rf_test_acc:.4f}\n")
 
-        rf_depth_var = np.var([t.get_depth() for t in rf.estimators_])
-        rf_leaves_var = np.var([t.get_n_leaves() for t in rf.estimators_])
+        depths = np.array([t.get_depth() for t in rf.estimators_])
+        rf_depth_var = np.var(depths)
+        rf_depth_mean = np.mean(depths)
+        rf_depth_median = np.median(depths)
+
+        leaves = np.array([t.get_n_leaves() for t in rf.estimators_])
+        rf_leaves_var = np.var(leaves)
+        rf_leaves_mean = np.mean(leaves)
+        rf_leaves_median = np.median(leaves)
+
         rf_avg_score = np.mean([t.score(X_val, y_val) for t in rf.estimators_])
 
         for tournament_k in TOURNAMENT_KS:
@@ -298,10 +339,18 @@ def main():
                     "avg_tree_test_acc": round(np.mean(tree_test_accs), 3),
                     "ensemble_test_acc": round(ens_test_acc, 3),
                     "height_var": round(np.var(heights), 3),
+                    "height_mean": round(np.mean(heights), 3),
+                    "height_median": round(np.median(heights), 3),
                     "leaves_var": round(np.var(leaves), 3),
+                    "leaves_mean": round(np.mean(leaves), 3),
+                    "leaves_median": round(np.median(leaves), 3),
                     "RF_baseline": round(rf_test_acc, 3),
-                    "RF_height": round(rf_depth_var, 3),
-                    "RF_leaves": round(rf_leaves_var, 3),
+                    "RF_height_var": round(rf_depth_var, 3),
+                    "RF_height_mean": round(rf_depth_mean, 3),
+                    "RF_height_median": round(rf_depth_median, 3),
+                    "RF_leaves_var": round(rf_leaves_var, 3),
+                    "RF_leaves_mean": round(rf_leaves_mean, 3),
+                    "RF_leaves_median": round(rf_leaves_median, 3),
                     "RF_avg": round(rf_avg_score, 3),
                 })
                 print(
