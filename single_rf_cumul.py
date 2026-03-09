@@ -79,19 +79,19 @@ class GeneticProgrammingSystem:
                 if name == "min_samples_leaf":
                     decoded[name] = max(
                         1,
-                        int(1 + g * 0.1 * n_samples)
+                        int(g * 20)  # [1, 20]
                     )
 
                 elif name == "min_samples_split":
                     decoded[name] = max(
                         2,
-                        int(2 + g * 0.1 * n_samples)
+                        int(g * 20) # [2, 20]
                     )
 
                 elif name == "max_depth":
                     decoded[name] = max(
                         1,
-                        int(1 + g * 0.1 * n_samples)
+                        int(g * 30) # [1, 30]
                     )
 
                 elif name == "min_impurity_decrease":
@@ -108,9 +108,6 @@ class GeneticProgrammingSystem:
 
         for _ in range(self.pop_size):
             gene_params = {k: None for k in PARAM_SPACE}
-
-            for name, spec in PARAM_SPACE.items():
-                gene_params[name] = self._mutate_gene(None, spec)
 
             tree = DecisionTreeClassifier()
             tree.gene_params_ = gene_params
@@ -136,10 +133,6 @@ class GeneticProgrammingSystem:
             return None
 
         # if non-default
-        # coin flip to switch to default
-        if random.random() < self.mutation_rate:
-            return None
-
         # coin flip to mutate or stay same
         if random.random() < self.mutation_rate:
             if spec["type"] == "float":
@@ -165,6 +158,13 @@ class GeneticProgrammingSystem:
         child = DecisionTreeClassifier()
         child.gene_params_ = child_genes
         return child, bootstrap_mutate
+    
+    def avg_default_params(self):
+        defaults_per_tree = [
+            sum(v is None for v in tree.gene_params_.values())
+            for tree in self.population
+        ]
+        return np.mean(defaults_per_tree)
 
     def evolve(self, X_train, y_train, X_val, y_val, gen_0=True):
         futures = [evaluate_individual.remote(t, X_val, y_val) for t in self.population]
@@ -281,7 +281,7 @@ def main():
 
         print("\n=== Baseline: sklearn RandomForestClassifier ===")
         rf = RandomForestClassifier(
-            n_estimators=5000,
+            n_estimators=10000,
             n_jobs=n_jobs,
             random_state=run_num
         )
@@ -305,7 +305,7 @@ def main():
             print(f"\n===== TOURNAMENT K = {tournament_k} =====")
             gp = GeneticProgrammingSystem(
                 pop_size=100,
-                mutation_rate=0.5,
+                mutation_rate=0.1,
                 tournament_k=tournament_k
             )
 
@@ -313,10 +313,12 @@ def main():
             cumulative_trees = []
             metrics = []
 
-            for gen in range(50):
+            for gen in range(100):
                 fitnesses, evaluated = gp.evolve(
                     X_train, y_train, X_val, y_val, gen_0=(gen == 0)
                 )
+
+                avg_defaults = gp.avg_default_params()
 
                 cumulative_trees.extend(evaluated)
 
@@ -352,6 +354,7 @@ def main():
                     "RF_leaves_mean": round(rf_leaves_mean, 3),
                     "RF_leaves_median": round(rf_leaves_median, 3),
                     "RF_avg": round(rf_avg_score, 3),
+                    "avg_default_params": round(avg_defaults, 3)
                 })
                 print(
                     f"Gen {gen}: avg_tree={np.mean(tree_test_accs):.4f}, "
