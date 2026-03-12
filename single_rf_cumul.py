@@ -305,7 +305,7 @@ def main():
             print(f"\n===== TOURNAMENT K = {tournament_k} =====")
             gp = GeneticProgrammingSystem(
                 pop_size=100,
-                mutation_rate=0.1,
+                mutation_rate=0.5,
                 tournament_k=tournament_k
             )
 
