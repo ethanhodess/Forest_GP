@@ -16,6 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import LabelEncoder
 from sklearn.compose import ColumnTransformer
 
 warnings.filterwarnings("ignore")
@@ -146,33 +147,44 @@ class GeneticProgrammingSystem:
 
     def _mutate_from_parent(self, parent):
         parent_genes = parent.gene_params_
-        child_genes = {}
+        child_genes = parent_genes.copy()
 
         bootstrap_mutate = random.random() < self.mutation_rate
 
-        for name, spec in PARAM_SPACE.items():
-            child_genes[name] = self._mutate_gene(
-            parent.gene_params_[name], spec
-        )
+        param_to_mutate = random.choice(list(PARAM_SPACE.keys()))
+        child_genes[param_to_mutate] = self._mutate_gene(
+        parent_genes[param_to_mutate], PARAM_SPACE[param_to_mutate]
+    )
 
         child = DecisionTreeClassifier()
         child.gene_params_ = child_genes
         return child, bootstrap_mutate
     
-    def avg_default_params(self):
+    def median_default_params(self):
         defaults_per_tree = [
             sum(v is None for v in tree.gene_params_.values())
             for tree in self.population
         ]
-        return np.mean(defaults_per_tree)
+        return np.median(defaults_per_tree)
+
+    def _print_param_defaults_pct(self):
+        total = len(self.population)
+        
+        print("\n% Default Values per Parameter:")
+        for name in PARAM_SPACE.keys():
+            count_default = sum(
+                1 for ind in self.population
+                if ind.gene_params_[name] is None
+            )
+            pct = (count_default / total) * 100
+            print(f"  {name}: {pct:.1f}%")
 
     def evolve(self, X_train, y_train, X_val, y_val, gen_0=True):
         futures = [evaluate_individual.remote(t, X_val, y_val) for t in self.population]
         fitnesses = ray.get(futures)
-        evaluated_population = copy.deepcopy(self.population)
 
         if gen_0:
-            return fitnesses, evaluated_population
+            return fitnesses, copy.deepcopy(self.population)
 
         n = len(X_train)
         new_population = []
@@ -197,7 +209,7 @@ class GeneticProgrammingSystem:
             new_population.append(child)
 
         self.population = new_population
-        return fitnesses, evaluated_population
+        return fitnesses, copy.deepcopy(self.population)
 
 
 
@@ -278,6 +290,11 @@ def main():
         y_val   = y_val.to_numpy()
         y_test  = y_test.to_numpy()
 
+        le = LabelEncoder()
+        y_train = le.fit_transform(y_train)
+        y_val   = le.transform(y_val)
+        y_test  = le.transform(y_test)
+
 
         print("\n=== Baseline: sklearn RandomForestClassifier ===")
         rf = RandomForestClassifier(
@@ -305,7 +322,7 @@ def main():
             print(f"\n===== TOURNAMENT K = {tournament_k} =====")
             gp = GeneticProgrammingSystem(
                 pop_size=100,
-                mutation_rate=0.5,
+                mutation_rate=0.25,
                 tournament_k=tournament_k
             )
 
@@ -318,7 +335,7 @@ def main():
                     X_train, y_train, X_val, y_val, gen_0=(gen == 0)
                 )
 
-                avg_defaults = gp.avg_default_params()
+                median_defaults = gp.median_default_params()
 
                 cumulative_trees.extend(evaluated)
 
@@ -352,14 +369,15 @@ def main():
                     "RF_height_median": round(rf_depth_median, 3),
                     "RF_leaves_var": round(rf_leaves_var, 3),
                     "RF_leaves_mean": round(rf_leaves_mean, 3),
-                    "RF_leaves_median": round(rf_leaves_median, 3),
+                    "RF_leaves_median": rf_leaves_median,
                     "RF_avg": round(rf_avg_score, 3),
-                    "avg_default_params": round(avg_defaults, 3)
+                    "median_default_params": round(median_defaults, 3)
                 })
                 print(
                     f"Gen {gen}: avg_tree={np.mean(tree_test_accs):.4f}, "
                     f"ens_test={ens_test_acc:.4f}"
                 )
+            gp._print_param_defaults_pct()
 
             pd.DataFrame(metrics).to_csv(
                 f"{base_save_folder}/metrics_k{tournament_k}_{task_id}_{run_num}.csv",
