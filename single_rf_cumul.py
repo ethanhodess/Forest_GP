@@ -32,7 +32,14 @@ def evaluate_individual(tree: DecisionTreeClassifier, X, y):
 
 
 
-DT_DEFAULTS = DecisionTreeClassifier().get_params(deep=False)
+DT_DEFAULTS = {
+    "max_depth": None,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "min_impurity_decrease": 0.0,
+    "criterion": "gini",
+    "max_features": "sqrt", 
+}
 
 PARAM_SPACE = {
     "max_depth": {"type": "float"},
@@ -45,7 +52,7 @@ PARAM_SPACE = {
     },
     "max_features": {
         "type": "cat",
-        "values": [None, "sqrt", "log2"],
+        "values": ["sqrt", "log2"],
     },
 }
 
@@ -322,7 +329,7 @@ def main():
             print(f"\n===== TOURNAMENT K = {tournament_k} =====")
             gp = GeneticProgrammingSystem(
                 pop_size=100,
-                mutation_rate=0.25,
+                mutation_rate=0.1,
                 tournament_k=tournament_k
             )
 
