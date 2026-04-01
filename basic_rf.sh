@@ -21,7 +21,7 @@ conda activate tpot2env
 #pip install -r requirements.txt
 
 echo RunStart
-srun -u /home/hodesse/miniconda3/envs/tpot2env/bin/python single_rf_cumul.py \
+srun -u /home/hodesse/miniconda3/envs/tpot2env/bin/python base_test_1.py \
 --n_jobs 12 \
 --savepath logs \
---num_runs ${RUN} \
+#--num_runs ${RUN} \
