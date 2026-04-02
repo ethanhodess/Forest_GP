@@ -203,7 +203,11 @@ class GeneticProgrammingSystem:
             child, bootstrap_mutate = self._mutate_from_parent(parent)
 
             if bootstrap_mutate:
-                idx = np.random.choice(n, size=n, replace=True)
+                #idx = np.random.choice(n, size=n, replace=True)
+                keep_pct = 0.2
+                keep_idx = np.random.choice(parent.sample_indices_, size=int(n*keep_pct), replace=False)
+                new_idx = np.random.choice(n, size=int(n*(1-keep_pct)), replace=True)
+                idx = np.concatenate((keep_idx, new_idx))
             else:
                 idx = parent.sample_indices_
 
