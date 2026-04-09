@@ -186,6 +186,11 @@ class GeneticProgrammingSystem:
     #         pct = (count_default / total) * 100
     #         print(f"  {name}: {pct:.1f}%")
 
+    def bootstrap_diversity(self, population, n_total):
+        #Mean % of unique rows across all trees' bootstrap samples
+        pcts = [len(np.unique(t.sample_indices_)) / n_total for t in population]
+        return np.mean(pcts), np.var(pcts)
+
     def evolve(self, X_train, y_train, X_val, y_val, gen_0=True):
         futures = [evaluate_individual.remote(t, X_val, y_val) for t in self.population]
         fitnesses = ray.get(futures)
@@ -204,7 +209,7 @@ class GeneticProgrammingSystem:
 
             if bootstrap_mutate:
                 #idx = np.random.choice(n, size=n, replace=True)
-                keep_pct = 0.2
+                keep_pct = 0.5
                 keep_idx = np.random.choice(parent.sample_indices_, size=int(n*keep_pct), replace=False)
                 new_idx = np.random.choice(n, size=int(n*(1-keep_pct)), replace=True)
                 idx = np.concatenate((keep_idx, new_idx))
@@ -244,7 +249,7 @@ def main():
     base_save_folder = args.savepath
     num_runs = int(args.num_runs)
 
-    TOURNAMENT_KS = [2]
+    TOURNAMENT_KS = [2, 10, 25, 50]
 
     try:
 
@@ -346,6 +351,8 @@ def main():
                     X_train, y_train, X_val, y_val, gen_0=(gen == 0)
                 )
 
+                div_mean, div_var = gp.bootstrap_diversity(gp.population, len(X_train))
+
                 # median_defaults = gp.median_default_params()
 
                 cumulative_trees.extend(evaluated)
@@ -382,7 +389,9 @@ def main():
                     "RF_leaves_mean": round(rf_leaves_mean, 3),
                     "RF_leaves_median": rf_leaves_median,
                     "RF_avg": round(rf_avg_score, 3),
-                    # "median_default_params": round(median_defaults, 3)
+                    # "median_default_params": round(median_defaults, 3),
+                    "bootstrap_diversity_mean": round(div_mean, 3),
+                    "bootstrap_diversity_var": round(div_var, 3)
                 })
                 print(
                     f"Gen {gen}: avg_tree={np.mean(tree_test_accs):.4f}, "
