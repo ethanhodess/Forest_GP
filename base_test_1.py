@@ -131,7 +131,7 @@ class GeneticProgrammingSystem:
 
     def _tournament_pick_index(self, fitnesses):
         competitors = random.sample(range(self.pop_size), self.tournament_k)
-        return max(competitors, key=lambda i: fitnesses[i][0])
+        return min(competitors, key=lambda i: fitnesses[i][0])
 
     # def _mutate_gene(self, current, spec):
     #     # if default
@@ -209,7 +209,7 @@ class GeneticProgrammingSystem:
 
             if bootstrap_mutate:
                 #idx = np.random.choice(n, size=n, replace=True)
-                keep_pct = 0.5
+                keep_pct = 0.8
                 keep_idx = np.random.choice(parent.sample_indices_, size=int(n*keep_pct), replace=False)
                 new_idx = np.random.choice(n, size=int(n*(1-keep_pct)), replace=True)
                 idx = np.concatenate((keep_idx, new_idx))
@@ -391,7 +391,7 @@ def main():
                     "RF_avg": round(rf_avg_score, 3),
                     # "median_default_params": round(median_defaults, 3),
                     "bootstrap_diversity_mean": round(div_mean, 3),
-                    "bootstrap_diversity_var": round(div_var, 3)
+                    "bootstrap_diversity_var": round(div_var, 6)
                 })
                 print(
                     f"Gen {gen}: avg_tree={np.mean(tree_test_accs):.4f}, "

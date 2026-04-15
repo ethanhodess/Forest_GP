@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=12
+#SBATCH --cpus-per-task=8
 #SBATCH -t 110:00:00
 #SBATCH --mem=64G
 #SBATCH --job-name=rf-gp
@@ -22,6 +22,6 @@ conda activate tpot2env
 
 echo RunStart
 srun -u /home/hodesse/miniconda3/envs/tpot2env/bin/python base_test_1.py \
---n_jobs 12 \
+--n_jobs 8 \
 --savepath logs \
 #--num_runs ${RUN} \
