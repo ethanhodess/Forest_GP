@@ -1,2 +1,4 @@
 *.out
 *.pyc
+*.Rhistory
+*.DS_Store
