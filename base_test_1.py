@@ -131,7 +131,7 @@ class GeneticProgrammingSystem:
 
     def _tournament_pick_index(self, fitnesses):
         competitors = random.sample(range(self.pop_size), self.tournament_k)
-        return min(competitors, key=lambda i: fitnesses[i][0])
+        return max(competitors, key=lambda i: fitnesses[i][0])
 
     # def _mutate_gene(self, current, spec):
     #     # if default
@@ -209,7 +209,7 @@ class GeneticProgrammingSystem:
 
             if bootstrap_mutate:
                 #idx = np.random.choice(n, size=n, replace=True)
-                keep_pct = 0.8
+                keep_pct = 0.2
                 keep_idx = np.random.choice(parent.sample_indices_, size=int(n*keep_pct), replace=False)
                 new_idx = np.random.choice(n, size=int(n*(1-keep_pct)), replace=True)
                 idx = np.concatenate((keep_idx, new_idx))
@@ -249,13 +249,13 @@ def main():
     base_save_folder = args.savepath
     num_runs = int(args.num_runs)
 
-    TOURNAMENT_KS = [2, 10, 25, 50]
+    TOURNAMENT_KS = [2]
 
     try:
 
         ray.init(num_cpus=n_jobs, ignore_reinit_error=True, log_to_driver=False)
 
-        task_ids = [168350, 168757, 168911, 190411, 359955]
+        task_ids = [168350, 168757, 168911, 190411, 359955, 146820, 359982, 190137]
         num_runs = 20
         jobs = [(tid, run) for tid in task_ids for run in range(num_runs)]
 
@@ -400,7 +400,7 @@ def main():
             # gp._print_param_defaults_pct()
 
             pd.DataFrame(metrics).to_csv(
-                f"{base_save_folder}/metrics_k{tournament_k}_{task_id}_{run_num}.csv",
+                f"{base_save_folder}/metrics_20_k{tournament_k}_{task_id}_{run_num}.csv",
                 index=False
             )
     except Exception as e:

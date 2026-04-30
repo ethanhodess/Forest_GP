@@ -8,7 +8,7 @@
 #SBATCH -p defq
 #SBATCH --exclude=esplhpc-cp040
 #SBATCH -o ./logs/outputs/output.%j_%a.out # STDOUT
-#SBATCH --array=0-99
+#SBATCH --array=0-159
 
 
 RUN=${SLURM_ARRAY_TASK_ID:-1}
